@@ -1,15 +1,9 @@
 #!/bin/bash
 # Launcher script for AmpliconCoverageAnalysis-SA script
-#
-# TODO:
-#    Need to write some code to clean up unecessary intermediate files:
-#         Rplots.pdf
-#         *clean.bed
-#         BAM.bed?  => Should add cli arg to input bed file we already have one? So in that case keep it?
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="0.6.0_081014"
+VERSION="0.7.0_081014"
 SCRIPTNAME=$(basename $0)
 SCRIPTPATH=$(readlink -f $0)
 SCRIPTDIR=$(dirname $SCRIPTPATH)
@@ -28,7 +22,10 @@ fi
 USAGE="$(cat <<EOT
 $SCRIPTNAME [options] <bamfile> <regions_bed> <sample_name>
 
-Program to run the amplicon coverage analysis pipeline scripts.  
+Program to run the amplicon coverage analysis pipeline scripts on a BAM file from the Ion Torrent platform. Required
+input is a BAM file, a regions BED file, and a sample name for formtting the output. Note that it is important to have
+a properly formatted BED file, or else the pipeline will not run as the necessary data will not be extracted.
+
     -b    BAM BED file to use rather than making a new one
     -m    Minimum coverage threshold (DEFAULT: 450)
     -o    Output directory for all of the output data (DEFAULT: PWD)
@@ -119,7 +116,6 @@ fi
 run() {
     local exit_code=0
     
-    #MSG=$( eval "$*" 2>&1 >/dev/null) 
     MSG=$( eval "$*" 2>&1 )
     exit_code=$?
 
@@ -148,7 +144,6 @@ cleanup() {
     test=(*clean.bed)
     declare -a temp_files=("Rplots.pdf" $outdir/*clean.bed "$outdir/$bambed")
     for file in "${temp_files[@]}"; do
-        #echo rm -rf "$file"
         echo $(now) "Removing '$file'..."
         rm -rf "$file"
     done
@@ -206,7 +201,7 @@ exec > >(tee $logfile)
 exec 2>&1
 
 # We're rolling...
-echo "$(now) Starting pipeline..."
+echo "$(now) Starting pipeline $bamfile..."
 
 # Check the output directory
 if ! [[ -d "$outdir" ]]; then
