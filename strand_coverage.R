@@ -8,7 +8,7 @@ Sys.time()
 getwd()
 
 args <- commandArgs( trailingOnly = TRUE )
-if( length(args) != 2 ) stop( "ERROR: not enough args supplied" )
+if( length(args) != 2 ) stop( "ERROR: incorrect number of args supplied. Script requires location of AllAmpliconsCoverage.tsv and output directory as args." )
 
 input_file <- args[1]
 outdir <- args[2]
