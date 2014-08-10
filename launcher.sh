@@ -2,7 +2,6 @@
 # Launcher script for AmpliconCoverageAnalysis-SA script
 #
 # TODO:
-#    Need to set up package environment so that we can find all the scripts
 #    Need to write some code to clean up unecessary intermediate files:
 #         Rplots.pdf
 #         *clean.bed
@@ -10,12 +9,12 @@
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="0.4.0_080914"
+VERSION="0.6.0_081014"
 SCRIPTNAME=$(basename $0)
 SCRIPTPATH=$(readlink -f $0)
 SCRIPTDIR=$(dirname $SCRIPTPATH)
 
-DEBUG=1
+DEBUG=0
 
 if [[ DEBUG -eq 1 ]]; then
     echo "#######  DEBUG  #######"
@@ -26,11 +25,11 @@ if [[ DEBUG -eq 1 ]]; then
     echo -e "#####################\n"
 fi
 
-
 USAGE="$(cat <<EOT
 $SCRIPTNAME [options] <bamfile> <regions_bed> <sample_name>
 
 Program to run the amplicon coverage analysis pipeline scripts.  
+    -b    BAM BED file to use rather than making a new one
     -m    Minimum coverage threshold (DEFAULT: 450)
     -o    Output directory for all of the output data (DEFAULT: PWD)
     -v    Version information
@@ -39,14 +38,16 @@ Program to run the amplicon coverage analysis pipeline scripts.
 EOT
 )"
 
-declare -a required_progs=("bamToBed" "samtools") 
-
 mincoverage=450  
 outdir=$(pwd)
+bambed=''
 
 # Set up CLI opts
-while getopts m:o:hv OPT; do
+while getopts ":m:o:b:hv" OPT; do
     case "$OPT" in 
+        b)
+            bambed="$OPTARG"
+            ;;
         m)
             if ! [[ $OPTARG =~ ^[0-9]+$ ]]; then
                 echo "ERROR: '$OPTARG' not valid for opt '-m'. Minimum coverage must be a number"
@@ -69,17 +70,20 @@ while getopts m:o:hv OPT; do
             ;;
         :)
             echo "Option "-$OPTARG" requires an argument\n"
-            help
+            echo "$USAGE"
             exit 1
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
-            help
+            echo "$USAGE"
             exit 1
             ;;
     esac
 done
 shift $((OPTIND - 1 ))
+
+# Hi! My name is:
+echo -e "\n::: Amplicon Coverage Analysis Pipeline :::\n"
 
 # Check that we have all the args we need
 if (( $# != 3 )); then
@@ -89,18 +93,16 @@ if (( $# != 3 )); then
 else
     bamfile=$1
     if ! [[ -e "$bamfile" ]]; then
-        echo "ERROR: BAM file '$bamfile' does not exist"
+        echo "ERROR: The BAM file '$bamfile' does not exist"
         exit 1
     fi
     regions_bed=$2
     if ! [[ -e "$regions_bed" ]]; then
-        echo "ERROR: Regions BED file '$regions_bed' does not exist"
+        echo "ERROR: The regions BED file '$regions_bed' does not exist"
         exit 1
     fi
     sample_name=$3
 fi
-
-bambed=${bamfile/bam/bed}
 
 if [[ DEBUG -eq 1 ]]; then
     echo "#######  DEBUG  #######"
@@ -128,7 +130,6 @@ run() {
     else
         echo "$MSG"
     fi
-
 }
 
 check_env() {
@@ -144,10 +145,12 @@ check_env() {
 }
 
 cleanup() {
-    continue
-    declare -a temp_files=("Rplots.pdf" "*clean.bed" "$bambed")
-    for file in $temp_files; do
-        echo rm -rf "$file"
+    test=(*clean.bed)
+    declare -a temp_files=("Rplots.pdf" $outdir/*clean.bed "$outdir/$bambed")
+    for file in "${temp_files[@]}"; do
+        #echo rm -rf "$file"
+        echo $(now) "Removing '$file'..."
+        rm -rf "$file"
     done
 }
 
@@ -160,7 +163,6 @@ check_dir() {
 
     if (( "${#dir_contents}" )); then
         for file in $dir_contents; do
-            echo "$file"
             if [[ $file =~ $re ]]; then
                 echo "WARNING: Output directory '$outdir' not empty and may have data that will be overwritten!"
                 echo -n "(c)ontinue (e)xit (n)ew directory? "
@@ -193,51 +195,62 @@ check_dir() {
     fi
 }
 
+# Check that we have the required helper progs to run this package
+declare -a required_progs=("bamToBed" "samtools") 
 check_env ${required_progs[@]}
 
 # Set up a log file
 logfile="$(date +"%Y%m%d").aac.log.txt"
-now() { now=$(date +%c); echo -n "[$now]:";}
+now() { now=$(date +"%m-%d-%Y %T"); echo -n "[$now]:";}
 exec > >(tee $logfile)
 exec 2>&1
 
+# We're rolling...
+echo "$(now) Starting pipeline..."
+
 # Check the output directory
 if ! [[ -d "$outdir" ]]; then
-    echo -n "$(now) Directory '$outdir' does not exist.  Creating new directory\n\n"
+    echo -e "$(now) Directory '$outdir' does not exist.  Creating new directory\n"
     mkdir -p "$outdir"
 fi
 check_dir "$outdir"
-exit 0
 
-# Generate a BAM.bed file.
-echo "$(now) Generating a BED file from '$bamfile'..."
-run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
-echo "$(now) BED file '$bambed' generated successfully"
+# Set up and generate the necessary BAM BED file
+if ! [[ $bambed ]]; then
+    bambed=${bamfile/bam/bed}
+    echo "$(now) Generating a BED file from '$bamfile'..."
+    run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
+    echo "$(now) BED file '$bambed' generated successfully"
+else
+    echo "$(now) Using existing BED file '$bambed'..."
+    if ! [[ -e $bambed ]]; then
+        echo "ERROR: The BAM BED file '$bambed' does not exist"
+        exit 1
+    fi
+fi
 
 # Get the BAM size
-echo  "\n$(now) Getting BAM file size..."
+echo  -e "\n$(now) Getting BAM file size..."
 bamsize=$(run "samtools idxstats $bamfile | awk '{reads += \$3} END {print reads}'")
-echo "$(now) $bamfile has $bamsize reads"
+echo -e "\n$(now) $bamfile has $bamsize reads"
 
 # Generate amp coverage tables
-echo "\n$(now) Generating amplicon coverage tables..."
-run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $bambed"
+echo -e "\n$(now) Generating amplicon coverage tables..."
+run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $outdir/$bambed"
 echo "$(now) Amplicon coverage tables successfully generated"
 
 # Generate scatter plot
-echo "\n$(now) Generating an amplicon coverage scatterplot..."
+echo -e "\n$(now) Generating an amplicon coverage scatterplot..."
 run "Rscript ${SCRIPTDIR}/coverage_scatter.R $sample_name $mincoverage $outdir"
 echo "$(now) Scatter plots generated successfully"
 
 # Generate strand bias tables
-echo "\n$(now) Generating amplicon bias plots..."
-run "Rscript ${SCRIPTDIR}/strand_coverage.R $outdir/AllAmpliconsCoverage.tsv $mincoverage $outdir"
+echo -e "\n$(now) Generating amplicon bias plots..."
+run "Rscript ${SCRIPTDIR}/strand_coverage.R $outdir/AllAmpliconsCoverage.tsv $outdir"
 echo "$(now) Bias plots successfully generated"
 
 # Clean up
-echo "\n$(now) Cleaning up intermediate files..."
+echo -e "\n$(now) Cleaning up intermediate files..."
 cleanup
-echo "\n$(now) Done!"
+echo -e "\n$(now) Done!"
 mv $logfile $outdir
-
-
