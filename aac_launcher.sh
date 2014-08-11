@@ -3,21 +3,10 @@
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="0.7.0_081014"
+VERSION="1.0.0_081014"
 SCRIPTNAME=$(basename $0)
 SCRIPTPATH=$(readlink -f $0)
 SCRIPTDIR=$(dirname $SCRIPTPATH)
-
-DEBUG=0
-
-if [[ DEBUG -eq 1 ]]; then
-    echo "#######  DEBUG  #######"
-    echo "Script env info:"
-    echo -e "\tscript name:   $SCRIPTNAME"
-    echo -e "\tscript path:   $SCRIPTPATH"
-    echo -e "\tscript dir:    $SCRIPTDIR"
-    echo -e "#####################\n"
-fi
 
 USAGE="$(cat <<EOT
 $SCRIPTNAME [options] <bamfile> <regions_bed> <sample_name>
@@ -99,18 +88,6 @@ else
         exit 1
     fi
     sample_name=$3
-fi
-
-if [[ DEBUG -eq 1 ]]; then
-    echo "#######  DEBUG  #######"
-    echo "CLI Opts:"
-    echo -e "\tbam file:     $bamfile"
-    echo -e "\tregions BED:  $regions_bed"
-    echo -e "\tsample name:  $sample_name"
-    echo -e "\tbam bed:      $bambed"
-    echo -e "\tmin cov:      $mincoverage"
-    echo -e "\toutdir:       $outdir"
-    echo "#####################"
 fi
 
 run() {
