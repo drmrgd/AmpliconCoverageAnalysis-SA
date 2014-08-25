@@ -8,13 +8,13 @@
 
 use warnings;
 use strict;
-use Getopt::Long;
+use Getopt::Long qw( :config bundling auto_abbrev no_ignore_case );
 use Data::Dumper;
 use File::Basename;
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v1.1.080814";
+my $version = "v1.2.082514";
 my $description = <<"EOT";
 From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
 generate strand coverage information for an amplicon panel.
@@ -39,13 +39,13 @@ my $num_reads;
 my $threshold = 450;
 my $ion;
 
-GetOptions( "outdir=s"    => \$outdir,
-            "sample=s"    => \$sample_name,
-            "ion"         => \$ion,
-            "reads=i"     => \$num_reads,
-            "threshold=i" => \$threshold,
-            "version"     => \$ver_info,
-            "help"        => \$help )
+GetOptions( "outdir|o=s"    => \$outdir,
+            "sample|s=s"    => \$sample_name,
+            "ion|i"         => \$ion,
+            "reads|r=i"     => \$num_reads,
+            "threshold|t=i" => \$threshold,
+            "version|v"     => \$ver_info,
+            "help|h"        => \$help )
         or print $usage;
 
 sub help {
@@ -84,8 +84,8 @@ my $bambed = shift;
 
 # If we're using an Ion Torrent processed BED file from their API, we need to process it a bit to get the Gene ID
 if ( $ion ) {
-    my $proc_bed = proc_bed( \$regionsbed);
-    $regionsbed= $proc_bed;
+    print "Converting Ion BED file to standard...\n";
+    $regionsbed = proc_bed( \$regionsbed );
 }
 
 my %coverage_data;
@@ -219,7 +219,14 @@ sub proc_bed {
         }
 
         my @fields = split;
-        my ($gene, $pool) = $fields[-1] =~ /GENE_ID=(.*?);.*(Pool.?\d+)/;
+        my ($gene, $pool);
+        if ( $fields[4] eq '.' ) {
+            ($gene, $pool) = $fields[-1] =~ /GENE_ID=(.*?);.*(Pool.?\d+)/;
+        } else {
+            $pool = $fields[4];
+            $gene = $fields[5];
+        }
+
         $pool =~ s/=//;
 
         print $out_fh join( "\t", @fields[0..3], $pool, $gene ), "\n";
