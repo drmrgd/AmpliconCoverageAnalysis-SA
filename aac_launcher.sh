@@ -179,6 +179,13 @@ exec 2>&1
 
 # We're rolling...
 echo "$(now) Starting pipeline $bamfile..."
+echo "$(now) Params as passed to the pipeline..."
+echo -e "\tMinimum coverage  => $mincoverage"
+echo -e "\tBAM BED File      => $bambed"
+echo -e "\tOutput Directory  => $outdir"
+echo -e "\tRegions BED File  => $regions_bed"
+echo -e "\tBAM File          => $bamfile"
+echo -e "\tSample name       => $sample_name"
 
 # Check the output directory
 if ! [[ -d "$outdir" ]]; then
