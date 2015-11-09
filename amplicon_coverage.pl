@@ -14,7 +14,7 @@ use File::Basename;
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v1.2.082514";
+my $version = "v1.3.110915";
 my $description = <<"EOT";
 From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
 generate strand coverage information for an amplicon panel.
@@ -91,8 +91,8 @@ if ( $ion ) {
 my %coverage_data;
 
 # Use BEDtools to get amplicon coverage data for each amplicon
-my $get_forward_reads = qq{ grep "\\+\$" $bambed | coverageBed -d -a stdin -b $regionsbed };
-my $get_reverse_reads = qq{ grep "\\-\$" $bambed | coverageBed -d -a stdin -b $regionsbed };
+my $get_forward_reads = qq{ grep "\\+\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
+my $get_reverse_reads = qq{ grep "\\-\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
 
 open( my $fcov, "-|", "$get_forward_reads" ) || die "Can't open the stream: $!";
 open( my $rcov, "-|", "$get_reverse_reads" ) || die "Can't open the stream: $!";
