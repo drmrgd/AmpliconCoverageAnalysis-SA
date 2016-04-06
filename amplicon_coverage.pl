@@ -9,19 +9,21 @@
 use warnings;
 use strict;
 use Getopt::Long qw( :config bundling auto_abbrev no_ignore_case );
-use Data::Dumper;
+use Data::Dump;
 use File::Basename;
+use List::Util qw(sum);
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v1.3.110915";
+my $version = "v1.9.111715";
 my $description = <<"EOT";
 From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
 generate strand coverage information for an amplicon panel.
 EOT
 
 my $usage = <<"EOT";
-USAGE: $scriptname [options] <regions_bed> <BAM_bed>
+USAGE: $scriptname [options] <regions_bed> (<BAM File> | -b <BAM BED File>)
+    -b, --bambed      Start with a BAM BED file generated through BED tools
     -s, --sample      Sample name
     -i, --ion         Using an Ion Torrent BED file that has been processed.
     -r, --reads       Total number of reads in the BAM file.
@@ -38,8 +40,10 @@ my $sample_name;
 my $num_reads;
 my $threshold = 450;
 my $ion;
+my $bambed;
 
-GetOptions( "outdir|o=s"    => \$outdir,
+GetOptions( "bambed|b=s"    => \$bambed,
+            "outdir|o=s"    => \$outdir,
             "sample|s=s"    => \$sample_name,
             "ion|i"         => \$ion,
             "reads|r=i"     => \$num_reads,
@@ -61,11 +65,22 @@ sub version {
 help if $help;
 version if $ver_info;
 
-# Make sure enough args passed to script
-if ( scalar( @ARGV ) != 2 ) {
-    print "ERROR: Not enough arguments passed to script!\n\n";
-    print "$usage\n";
-    exit 1;
+my ($bamfile, $regionsbed);
+if ($bambed) {
+    $regionsbed = shift;
+} else {
+    ($regionsbed, $bamfile) = @ARGV;
+}
+
+if (! $regionsbed && ($bamfile || $bambed)) {
+    die "ERROR: Insufficient arguments!\n";
+    print $usage;
+    exit(1);
+}
+
+if ( ! -d $outdir ) {
+    print "Output directory '$outdir' not found. Creating output directory: $outdir\n";
+    mkdir($outdir) || die "ERROR: Can not create $outdir: $!\n";
 }
 
 # Create some output filehandles for the data
@@ -79,47 +94,106 @@ open( my $summary_fh, ">", $summary_file ) || die "Can't open the 'stat_table.tx
 
 #########------------------------------ END ARG Parsing ---------------------------------#########
 
-my $regionsbed = shift;
-my $bambed = shift;
-
 # If we're using an Ion Torrent processed BED file from their API, we need to process it a bit to get the Gene ID
 if ( $ion ) {
     print "Converting Ion BED file to standard...\n";
     $regionsbed = proc_bed( \$regionsbed );
 }
 
-my %coverage_data;
-
-# Use BEDtools to get amplicon coverage data for each amplicon
-my $get_forward_reads = qq{ grep "\\+\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
-my $get_reverse_reads = qq{ grep "\\-\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
-
-open( my $fcov, "-|", "$get_forward_reads" ) || die "Can't open the stream: $!";
-open( my $rcov, "-|", "$get_reverse_reads" ) || die "Can't open the stream: $!";
-
-while (<$fcov>) {
-    chomp;
-    my @data = split;
-    push( @{$coverage_data{join( ":", @data[3,5] )}->{'for'}}, $data[7] );
+print "bamfile: $bamfile\n";
+if ($bambed) {
+    print "Using pre-loaded BED file: $bambed\n";
+} else {
+    $bambed = gen_bam_bed($bamfile);
 }
-close $fcov;
 
-while (<$rcov>) {
-    chomp;
-    my @data = split;
-    push( @{$coverage_data{join( ":", @data[3,5] )}->{'rev'}}, $data[7] );
+# XXX
+my (%coverage_data, %base_coverage_data);
+#get_coverage_data($bambed,$regionsbed,\%coverage_data,\%tmp_data);
+get_coverage_data($bambed,$regionsbed,\%coverage_data);
+get_base_coverage_data( $bambed, $regionsbed, \%base_coverage_data);
+dd \%base_coverage_data;
+exit;
+
+# have to count here or I get 2x counts for overlapping bases...then again, is that a bad thing?
+my $total_base_reads;
+$total_base_reads += $base_coverage_data{$_} for keys %base_coverage_data;
+exit;
+
+#get_metrics(\%tmp_data, $total_base_reads);
+
+sub get_base_coverage_data {
+    # TODO: Fix this function.  No data loaded yet!
+    my ($bambed, $regions_bed, $base_data) = @_;
+    my $total_base_reads = 0;
+    my $cmd = qq{ coveragebed -d -b $bambed -a $regionsbed };
+    open(my $stream, "-|", $cmd);
+    while (<$stream>) {
+        my @fields = split;
+        my $pos = "$fields[0]:" . ($fields[1] + ($fields[6]-1));
+        $$base_data{$pos} = $fields[7];
+    }
+    return;
 }
-close $rcov;
+
+sub get_coverage_data {
+    #my ($bambed,$regionsbed,$coverage_data,$tmp) = @_;
+    my ($bambed,$regionsbed,$coverage_data) = @_;
+    print "bambed: $bambed\n";
+    print "reg bed: $regionsbed\n";
+
+    # Use BEDtools to get amplicon coverage data for each amplicon
+    my $get_forward_reads = qq{ grep "\\+\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
+    open( my $fcov, "-|", "$get_forward_reads" ) || die "Can't open the stream: $!";
+    while (<$fcov>) {
+        chomp;
+        my @data = split;
+        push( @{$coverage_data{join( ":", @data[3,5] )}->{'for'}}, $data[7] );
+    }
+    close $fcov;
+
+    my $get_reverse_reads = qq{ grep "\\-\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
+    open( my $rcov, "-|", "$get_reverse_reads" ) || die "Can't open the stream: $!";
+    while (<$rcov>) {
+        chomp;
+        my @data = split;
+        push( @{$coverage_data{join( ":", @data[3,5] )}->{'rev'}}, $data[7] );
+    }
+    close $rcov;
+    return;
+}
+
+sub get_metrics {
+    my ($coverage_data,$total_base_reads) = @_;
+
+    my ($total_nz_bases,$bases_over_mean);
+    my $total_bases = keys %$coverage_data;
+    my $mean_base_coverage = $total_base_reads/$total_bases;
+    for my $pos (keys %$coverage_data) {
+        $total_nz_bases++ if $$coverage_data{$pos} != 0;
+        $bases_over_mean++ if $$coverage_data{$pos} >= ($mean_base_coverage*0.2);
+    }
+
+    my $uniformity = ($bases_over_mean/$total_bases)*100.00;
+
+    print "total bases:          $total_bases\n";
+    print "total non-zero bases: $total_nz_bases\n";
+    print "total base reads:     $total_base_reads\n";
+    print "mean base reads:      $mean_base_coverage\n";
+    print "uniformity:           $uniformity\n";
+    return;
+}
 
 my %coverage_stats;
 my @all_coverage;
 
 for my $amplicon( sort keys %coverage_data ) {
-    my $length = scalar(@{$coverage_data{$amplicon}->{'for'}});
 
+    # amplicon strand info: length, median
+    my $length = scalar(@{$coverage_data{$amplicon}->{'for'}});
     my @forward_reads = @{$coverage_data{$amplicon}->{'for'}};
     my @reverse_reads = @{$coverage_data{$amplicon}->{'rev'}};
-
+    
     my $forward_median = median( \@forward_reads ); 
     my $reverse_median = median( \@reverse_reads );
 
@@ -165,15 +239,24 @@ close $aa_fh;
 close $low_fh;
 
 # Get quartile coverage data and create output file
+select $summary_fh;
 my ( $quart1, $quart2, $quart3 ) = quartile_coverage( \@all_coverage );
-printf $summary_fh "Sample name: %s\n", $sample_name if $sample_name;
-printf $summary_fh "Total number of mapped reads: %d\n", $num_reads if $num_reads;
-printf $summary_fh "Total number of amplicons: %d\n", scalar( keys %coverage_stats);
-printf $summary_fh "Number of amplicons below the threshold: %d\n", $low_total;
-printf $summary_fh "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
-printf $summary_fh "25%% Quartile Coverage: %d\n", $quart1;
-printf $summary_fh "50%% Quartile Coverage: %d\n", $quart2;
-printf $summary_fh "75%% Quartile Coverage: %d\n", $quart3;
+print "Sample name: $sample_name\n" if $sample_name;
+print "Total number of mapped reads: $num_reads\n" if $num_reads;
+print "Total number of amplicons: ", scalar( keys %coverage_stats), "\n";
+print "Number of amplicons below the threshold: $low_total\n";
+printf "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
+print "25%% Quartile Coverage: $quart1\n";
+print "50%% Quartile Coverage: $quart2\n";
+print "75%% Quartile Coverage: $quart3\n";
+#printf $summary_fh "Sample name: %s\n", $sample_name if $sample_name;
+#printf $summary_fh "Total number of mapped reads: %d\n", $num_reads if $num_reads;
+#printf $summary_fh "Total number of amplicons: %d\n", scalar( keys %coverage_stats);
+#printf $summary_fh "Number of amplicons below the threshold: %d\n", $low_total;
+#printf $summary_fh "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
+#printf $summary_fh "25%% Quartile Coverage: %d\n", $quart1;
+#printf $summary_fh "50%% Quartile Coverage: %d\n", $quart2;
+#printf $summary_fh "75%% Quartile Coverage: %d\n", $quart3;
 close $summary_fh;
 
 sub median {
@@ -235,4 +318,21 @@ sub proc_bed {
     close $out_fh;
 
     return $output_bed;
+}
+
+sub gen_bam_bed {
+    my $bamfile = shift;
+    my $bambed = "$bamfile.bed";
+    my $cmd = "bamToBed -i $bamfile";
+    print "Generating a BED file from BAM $bamfile...";
+    open( my $stream, "-|", $cmd );
+    open( my $output_fh, ">", $bambed );
+
+    while (<$stream>) {
+        print {$output_fh} $_;
+    }
+
+    close $output_fh;
+    print "Done!\n";
+    return $bambed;
 }
