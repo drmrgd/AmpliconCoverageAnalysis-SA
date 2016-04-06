@@ -72,7 +72,8 @@ shift $((OPTIND - 1 ))
 echo -e "\n::: Amplicon Coverage Analysis Pipeline :::\n"
 
 # Check that we have all the args we need
-if (( $# != 3 )); then
+#if (( $# != 3 )); then
+if (( $# < 2 )); then
     echo "ERROR: Not enough arguments passed to script"
     echo "$USAGE"
     exit 1
@@ -127,6 +128,9 @@ cleanup() {
 }
 
 check_dir() {
+    # TODOD
+    # Disable for now
+    return
     shopt -s nullglob
     outdir=$1
     re='[a-zA-Z0-9]+\.(tsv|txt|bed)$'
@@ -195,18 +199,19 @@ fi
 check_dir "$outdir"
 
 # Set up and generate the necessary BAM BED file
-if ! [[ $bambed ]]; then
-    bambed=${bamfile/bam/bed}
-    echo "$(now) Generating a BED file from '$bamfile'..."
-    run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
-    echo "$(now) BED file '$bambed' generated successfully"
-else
-    echo "$(now) Using existing BED file '$bambed'..."
-    if ! [[ -e $bambed ]]; then
-        echo "ERROR: The BAM BED file '$bambed' does not exist"
-        exit 1
-    fi
-fi
+# Remove and have in perl script?
+#if ! [[ $bambed ]]; then
+    #bambed=${bamfile/bam/bed}
+    #echo "$(now) Generating a BED file from '$bamfile'..."
+    #run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
+    #echo "$(now) BED file '$bambed' generated successfully"
+#else
+    #echo "$(now) Using existing BED file '$bambed'..."
+    #if ! [[ -e $bambed ]]; then
+        #echo "ERROR: The BAM BED file '$bambed' does not exist"
+        #exit 1
+    #fi
+#fi
 
 # Get the BAM size
 echo  -e "\n$(now) Getting BAM file size..."
@@ -215,8 +220,10 @@ echo -e "\n$(now) $bamfile has $bamsize reads"
 
 # Generate amp coverage tables
 echo -e "\n$(now) Generating amplicon coverage tables..."
-run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $outdir/$bambed"
+#run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $outdir/$bambed"
+run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $bamfile"
 echo "$(now) Amplicon coverage tables successfully generated"
+exit
 
 # Generate scatter plot
 echo -e "\n$(now) Generating an amplicon coverage scatterplot..."
