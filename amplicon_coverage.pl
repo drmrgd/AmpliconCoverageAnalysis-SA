@@ -5,9 +5,10 @@
 #
 # 3/4/2014 - D Sims
 #############################################################################################################
-
 use warnings;
 use strict;
+use autodie;
+
 use Getopt::Long qw( :config bundling auto_abbrev no_ignore_case );
 use Data::Dump;
 use File::Basename;
@@ -15,7 +16,7 @@ use List::Util qw(sum);
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v1.9.111715";
+my $version = "v1.9.7_040716";
 my $description = <<"EOT";
 From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
 generate strand coverage information for an amplicon panel.
@@ -83,15 +84,6 @@ if ( ! -d $outdir ) {
     mkdir($outdir) || die "ERROR: Can not create $outdir: $!\n";
 }
 
-# Create some output filehandles for the data
-my $lowcoverage_file = "$outdir/LowCoverageAmplicons.tsv";
-my $allcoverage_file = "$outdir/AllAmpliconsCoverage.tsv";
-my $summary_file = "$outdir/stat_table.txt";
-
-open( my $aa_fh, ">", $allcoverage_file ) || die "Can't open the 'All Amplicons Coverage file for writing: $!";
-open( my $low_fh, ">", $lowcoverage_file ) || die "Can't open the Low Amplicons Coverage file for writing: $!";
-open( my $summary_fh, ">", $summary_file ) || die "Can't open the 'stat_table.txt' file for writing: $!";
-
 #########------------------------------ END ARG Parsing ---------------------------------#########
 
 # If we're using an Ion Torrent processed BED file from their API, we need to process it a bit to get the Gene ID
@@ -100,7 +92,6 @@ if ( $ion ) {
     $regionsbed = proc_bed( \$regionsbed );
 }
 
-print "bamfile: $bamfile\n";
 if ($bambed) {
     print "Using pre-loaded BED file: $bambed\n";
 } else {
@@ -109,21 +100,133 @@ if ($bambed) {
 
 # XXX
 my (%coverage_data, %base_coverage_data);
-#get_coverage_data($bambed,$regionsbed,\%coverage_data,\%tmp_data);
 get_coverage_data($bambed,$regionsbed,\%coverage_data);
 get_base_coverage_data( $bambed, $regionsbed, \%base_coverage_data);
-dd \%base_coverage_data;
-exit;
 
 # have to count here or I get 2x counts for overlapping bases...then again, is that a bad thing?
 my $total_base_reads;
 $total_base_reads += $base_coverage_data{$_} for keys %base_coverage_data;
-exit;
 
-#get_metrics(\%tmp_data, $total_base_reads);
+my %coverage_stats;
+my @all_coverage;
+get_coverage_stats(\%coverage_stats, \@all_coverage);
+
+# XXX Generate the amplicon coverage tables
+my $low_total = gen_amplicon_coverage_tables($outdir);
+
+my ($total_bases, $total_nz_bases, $base_reads, $mean_base_coverage, $uniformity) = get_metrics(\%base_coverage_data, $total_base_reads);
+# Create some output filehandles for the data
+my $summary_file = "$outdir/stat_table.txt";
+open( my $summary_fh, ">", "$outdir/stat_table.txt") || die "Can't open the 'stat_table.txt' file for writing: $!";
+
+{
+    # Get quartile coverage data and create output file
+    select $summary_fh;
+    my ( $quart1, $quart2, $quart3 ) = quartile_coverage( \@all_coverage );
+    print "Sample name: $sample_name\n" if $sample_name;
+    print "Total number of mapped reads: $num_reads\n" if $num_reads;
+    print "Total number of amplicons: ", scalar( keys %coverage_stats), "\n";
+    print "Number of amplicons below the threshold: $low_total\n";
+    printf "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
+    print "25%% Quartile Coverage: $quart1\n";
+    print "50%% Quartile Coverage: $quart2\n";
+    print "75%% Quartile Coverage: $quart3\n";
+    
+    print "total bases:          $total_bases\n";
+    print "total non-zero bases: $total_nz_bases\n";
+    print "total base reads:     $total_base_reads\n";
+    print "mean base reads:      $mean_base_coverage\n";
+    print "uniformity:           $uniformity\n";
+    close $summary_fh;
+}
+
+
+sub get_metrics {
+    my ($coverage_data,$total_base_reads) = @_;
+
+    my ($total_nz_bases,$bases_over_mean);
+    my $total_bases = keys %$coverage_data;
+    my $mean_base_coverage = sprintf("%0.2f", $total_base_reads/$total_bases);
+    for my $pos (keys %$coverage_data) {
+        $total_nz_bases++ if $$coverage_data{$pos} != 0;
+        $bases_over_mean++ if $$coverage_data{$pos} >= ($mean_base_coverage*0.2);
+    }
+
+    my $uniformity = sprintf("%0.2f", ($bases_over_mean/$total_bases)*100.00);
+
+    #print "total bases:          $total_bases\n";
+    #print "total non-zero bases: $total_nz_bases\n";
+    #print "total base reads:     $total_base_reads\n";
+    #print "mean base reads:      $mean_base_coverage\n";
+    #print "uniformity:           $uniformity\n";
+    return ($total_bases, $total_nz_bases, $total_base_reads, $mean_base_coverage, $uniformity);
+}
+
+sub gen_amplicon_coverage_tables {
+    my $outdir = shift;
+    my $lowcoverage_file = "$outdir/LowCoverageAmplicons.tsv";
+    my $allcoverage_file = "$outdir/AllAmpliconsCoverage.tsv";
+    open( my $aa_fh, ">", $allcoverage_file ) || die "Can't open the 'All Amplicons Coverage file for writing: $!";
+    open( my $low_fh, ">", $lowcoverage_file ) || die "Can't open the Low Amplicons Coverage file for writing: $!";
+
+    # Make tables of All Amplicon and Low Amplicon Coverage
+    my $header = "Amplicon\tGene\tForward\tReverse\tFoward Proportion\tReverse Proportion\tMedian\tLength\n";
+    print $aa_fh $header;
+    print $low_fh $header;
+
+    my $low_total = 0;
+    for my $amplicon( keys %coverage_stats) {
+        my ( $ampid, $gene, $length ) = split( /:/, $amplicon );
+        my $outstring = join( "\t", $ampid, $gene, @{$coverage_stats{$amplicon}}, $length );
+        print $aa_fh "$outstring\n";
+
+        if ( $coverage_stats{$amplicon}[4] < $threshold ) {
+            print $low_fh "$outstring\n";
+            $low_total++;
+        }
+    }
+
+    close $aa_fh;
+    close $low_fh;
+    return $low_total;
+}
+
+sub get_coverage_stats {
+    my ($coverage_stats,$amp_coverage) = @_;
+    for my $amplicon( sort keys %coverage_data ) {
+
+        # amplicon strand info: length, median
+        my $length = scalar(@{$coverage_data{$amplicon}->{'for'}});
+        my @forward_reads = @{$coverage_data{$amplicon}->{'for'}};
+        my @reverse_reads = @{$coverage_data{$amplicon}->{'rev'}};
+        
+        my $forward_median = median( \@forward_reads ); 
+        my $reverse_median = median( \@reverse_reads );
+
+        my @amp_coverage;
+        for my $i ( 0..$#forward_reads ) {
+            my $sum_fr = $forward_reads[$i] + $reverse_reads[$i]; 
+            push( @all_coverage, $sum_fr );
+            push( @amp_coverage, $sum_fr );
+        }
+        my $median = median( \@amp_coverage );
+
+        my $total_reads = $forward_median + $reverse_median;
+
+        my ( $forward_prop, $reverse_prop );
+        if ( $total_reads != 0 ) {
+            $forward_prop = sprintf( "%.3f", $forward_median/$total_reads );
+            $reverse_prop = sprintf( "%.3f", 1 - $forward_prop );
+        } else {
+            $forward_prop = $reverse_prop = 0;
+        }
+
+        push( @{$coverage_stats{ join( ":", $amplicon, $length )}}, $forward_median, $reverse_median, $forward_prop, $reverse_prop, $median ); 
+    }
+    return;
+}
 
 sub get_base_coverage_data {
-    # TODO: Fix this function.  No data loaded yet!
     my ($bambed, $regions_bed, $base_data) = @_;
     my $total_base_reads = 0;
     my $cmd = qq{ coveragebed -d -b $bambed -a $regionsbed };
@@ -137,10 +240,7 @@ sub get_base_coverage_data {
 }
 
 sub get_coverage_data {
-    #my ($bambed,$regionsbed,$coverage_data,$tmp) = @_;
     my ($bambed,$regionsbed,$coverage_data) = @_;
-    print "bambed: $bambed\n";
-    print "reg bed: $regionsbed\n";
 
     # Use BEDtools to get amplicon coverage data for each amplicon
     my $get_forward_reads = qq{ grep "\\+\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
@@ -162,102 +262,6 @@ sub get_coverage_data {
     close $rcov;
     return;
 }
-
-sub get_metrics {
-    my ($coverage_data,$total_base_reads) = @_;
-
-    my ($total_nz_bases,$bases_over_mean);
-    my $total_bases = keys %$coverage_data;
-    my $mean_base_coverage = $total_base_reads/$total_bases;
-    for my $pos (keys %$coverage_data) {
-        $total_nz_bases++ if $$coverage_data{$pos} != 0;
-        $bases_over_mean++ if $$coverage_data{$pos} >= ($mean_base_coverage*0.2);
-    }
-
-    my $uniformity = ($bases_over_mean/$total_bases)*100.00;
-
-    print "total bases:          $total_bases\n";
-    print "total non-zero bases: $total_nz_bases\n";
-    print "total base reads:     $total_base_reads\n";
-    print "mean base reads:      $mean_base_coverage\n";
-    print "uniformity:           $uniformity\n";
-    return;
-}
-
-my %coverage_stats;
-my @all_coverage;
-
-for my $amplicon( sort keys %coverage_data ) {
-
-    # amplicon strand info: length, median
-    my $length = scalar(@{$coverage_data{$amplicon}->{'for'}});
-    my @forward_reads = @{$coverage_data{$amplicon}->{'for'}};
-    my @reverse_reads = @{$coverage_data{$amplicon}->{'rev'}};
-    
-    my $forward_median = median( \@forward_reads ); 
-    my $reverse_median = median( \@reverse_reads );
-
-    my @amp_coverage;
-    for my $i ( 0..$#forward_reads ) {
-        my $sum_fr = $forward_reads[$i] + $reverse_reads[$i]; 
-        push( @all_coverage, $sum_fr );
-        push( @amp_coverage, $sum_fr );
-    }
-    my $median = median( \@amp_coverage );
-
-    my $total_reads = $forward_median + $reverse_median;
-
-    my ( $forward_prop, $reverse_prop );
-    if ( $total_reads != 0 ) {
-        $forward_prop = sprintf( "%.3f", $forward_median/$total_reads );
-        $reverse_prop = sprintf( "%.3f", 1 - $forward_prop );
-    } else {
-        $forward_prop = $reverse_prop = 0;
-    }
-
-    push( @{$coverage_stats{ join( ":", $amplicon, $length )}}, $forward_median, $reverse_median, $forward_prop, $reverse_prop, $median ); 
-}
-
-# Make tables of All Amplicon and Low Amplicon Coverage
-my $header = "Amplicon\tGene\tForward\tReverse\tFoward Proportion\tReverse Proportion\tMedian\tLength\n";
-print $aa_fh $header;
-print $low_fh $header;
-
-my $low_total = 0;
-for my $amplicon( keys %coverage_stats) {
-    my ( $ampid, $gene, $length ) = split( /:/, $amplicon );
-    my $outstring = join( "\t", $ampid, $gene, @{$coverage_stats{$amplicon}}, $length );
-    print $aa_fh "$outstring\n";
-
-    if ( $coverage_stats{$amplicon}[4] < $threshold ) {
-        print $low_fh "$outstring\n";
-        $low_total++;
-    }
-}
-
-close $aa_fh;
-close $low_fh;
-
-# Get quartile coverage data and create output file
-select $summary_fh;
-my ( $quart1, $quart2, $quart3 ) = quartile_coverage( \@all_coverage );
-print "Sample name: $sample_name\n" if $sample_name;
-print "Total number of mapped reads: $num_reads\n" if $num_reads;
-print "Total number of amplicons: ", scalar( keys %coverage_stats), "\n";
-print "Number of amplicons below the threshold: $low_total\n";
-printf "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
-print "25%% Quartile Coverage: $quart1\n";
-print "50%% Quartile Coverage: $quart2\n";
-print "75%% Quartile Coverage: $quart3\n";
-#printf $summary_fh "Sample name: %s\n", $sample_name if $sample_name;
-#printf $summary_fh "Total number of mapped reads: %d\n", $num_reads if $num_reads;
-#printf $summary_fh "Total number of amplicons: %d\n", scalar( keys %coverage_stats);
-#printf $summary_fh "Number of amplicons below the threshold: %d\n", $low_total;
-#printf $summary_fh "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
-#printf $summary_fh "25%% Quartile Coverage: %d\n", $quart1;
-#printf $summary_fh "50%% Quartile Coverage: %d\n", $quart2;
-#printf $summary_fh "75%% Quartile Coverage: %d\n", $quart3;
-close $summary_fh;
 
 sub median {
     # Create a median function in order to prevent having to use non-core modules
