@@ -1,9 +1,17 @@
 #!/bin/bash
 # Launcher script for AmpliconCoverageAnalysis-SA script
+#
+# TODO:
+#    - cli args is not working quite rigth.  If I use opts then the rest of the arg mapping is all messed up.  Need
+#      to fix the way the cli args are being processed.
+#    - Add check to see if the BAM file is indexed adn if not, then index it.
+#    - Add soem better error checking.
+#    - Check the directory overwrite function.  Seems that I'm getting some erroneous data with this check.
+#    - 
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="1.0.0_081014"
+VERSION="1.3.1_041416"
 SCRIPTNAME=$(basename $0)
 SCRIPTPATH=$(readlink -f $0)
 SCRIPTDIR=$(dirname $SCRIPTPATH)
@@ -119,8 +127,8 @@ check_env() {
 }
 
 cleanup() {
-    test=(*clean.bed)
     declare -a temp_files=("Rplots.pdf" $outdir/*clean.bed "$outdir/$bambed")
+    #declare -a temp_files=("Rplots.pdf" $(find . -name "*bed"))
     for file in "${temp_files[@]}"; do
         echo $(now) "Removing '$file'..."
         rm -rf "$file"
@@ -199,19 +207,18 @@ fi
 check_dir "$outdir"
 
 # Set up and generate the necessary BAM BED file
-# Remove and have in perl script?
-#if ! [[ $bambed ]]; then
-    #bambed=${bamfile/bam/bed}
-    #echo "$(now) Generating a BED file from '$bamfile'..."
-    #run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
-    #echo "$(now) BED file '$bambed' generated successfully"
-#else
-    #echo "$(now) Using existing BED file '$bambed'..."
-    #if ! [[ -e $bambed ]]; then
-        #echo "ERROR: The BAM BED file '$bambed' does not exist"
-        #exit 1
-    #fi
-#fi
+if ! [[ $bambed ]]; then
+    bambed="${bamfile}.bed"
+    echo "$(now) Generating a BED file from '$bamfile'..."
+    run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
+    echo "$(now) BED file '$bambed' generated successfully"
+else
+    echo "$(now) Using existing BED file '$bambed'..."
+    if ! [[ -e $bambed ]]; then
+        echo "ERROR: The BAM BED file '$bambed' does not exist"
+        exit 1
+    fi
+fi
 
 # Get the BAM size
 echo  -e "\n$(now) Getting BAM file size..."
@@ -220,10 +227,9 @@ echo -e "\n$(now) $bamfile has $bamsize reads"
 
 # Generate amp coverage tables
 echo -e "\n$(now) Generating amplicon coverage tables..."
-#run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $outdir/$bambed"
-run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $bamfile"
+run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$bambed"
+#run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $bamfile"
 echo "$(now) Amplicon coverage tables successfully generated"
-exit
 
 # Generate scatter plot
 echo -e "\n$(now) Generating an amplicon coverage scatterplot..."
