@@ -98,7 +98,6 @@ if ($bambed) {
     $bambed = gen_bam_bed($bamfile);
 }
 
-# XXX
 my (%coverage_data, %base_coverage_data);
 get_coverage_data($bambed,$regionsbed,\%coverage_data);
 get_base_coverage_data( $bambed, $regionsbed, \%base_coverage_data);
@@ -111,7 +110,7 @@ my %coverage_stats;
 my @all_coverage;
 get_coverage_stats(\%coverage_stats, \@all_coverage);
 
-# XXX Generate the amplicon coverage tables
+# Generate the amplicon coverage tables
 my $low_total = gen_amplicon_coverage_tables($outdir);
 
 my ($total_bases, $total_nz_bases, $base_reads, $mean_base_coverage, $uniformity) = get_metrics(\%base_coverage_data, $total_base_reads);
