@@ -1,6 +1,6 @@
 # Plot strand coverage
 # 3/13/2014 - D Sims
-###############################################################################################################################
+#######################################################################################################################
 library("ggplot2")
 library("reshape2")
 
@@ -11,7 +11,7 @@ args <- commandArgs( trailingOnly = TRUE )
 if( length(args) != 2 ) stop( "ERROR: incorrect number of args supplied. Script requires location of AllAmpliconsCoverage.tsv and output directory as args." )
 
 input_file <- args[1]
-outdir <- args[2]
+outdir     <- args[2]
 
 input_data <- data.frame( read.table( input_file, sep="\t", header=TRUE ) )
 input_data$negReverse <- -input_data$Reverse
