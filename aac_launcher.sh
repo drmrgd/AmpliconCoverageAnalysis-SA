@@ -14,6 +14,11 @@ SCRIPTNAME=$(basename $0)
 SCRIPTPATH=$(readlink -f $0)
 SCRIPTDIR=$(dirname $SCRIPTPATH)
 
+echo "scriptname: $SCRIPTNAME"
+echo "scriptpath: $SCRIPTPATH"
+echo "scriptdir:  $SCRIPTDIR"
+exit;
+
 USAGE="$(cat <<EOT
 $SCRIPTNAME [options] <bamfile> <regions_bed> <sample_name>
 
