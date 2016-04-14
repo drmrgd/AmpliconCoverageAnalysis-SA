@@ -6,12 +6,10 @@
 #      to fix the way the cli args are being processed.
 #    - Add check to see if the BAM file is indexed adn if not, then index it.
 #    - Add soem better error checking.
-#    - Check the directory overwrite function.  Seems that I'm getting some erroneous data with this check.
-#    - 
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="1.3.1_041416"
+VERSION="1.3.2_041416"
 SCRIPTNAME=$(basename $0)
 SCRIPTPATH=$(readlink -f $0)
 SCRIPTDIR=$(dirname $SCRIPTPATH)
@@ -128,7 +126,6 @@ check_env() {
 
 cleanup() {
     declare -a temp_files=("Rplots.pdf" $outdir/*clean.bed "$outdir/$bambed")
-    #declare -a temp_files=("Rplots.pdf" $(find . -name "*bed"))
     for file in "${temp_files[@]}"; do
         echo $(now) "Removing '$file'..."
         rm -rf "$file"
@@ -136,9 +133,6 @@ cleanup() {
 }
 
 check_dir() {
-    # TODOD
-    # Disable for now
-    return
     shopt -s nullglob
     outdir=$1
     re='[a-zA-Z0-9]+\.(tsv|txt|bed)$'
