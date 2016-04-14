@@ -9,15 +9,9 @@
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="1.3.2_041416"
+VERSION="1.4.0_041416"
 SCRIPTNAME=$(basename $0)
-SCRIPTPATH=$(readlink -f $0)
-SCRIPTDIR=$(dirname $SCRIPTPATH)
-
-echo "scriptname: $SCRIPTNAME"
-echo "scriptpath: $SCRIPTPATH"
-echo "scriptdir:  $SCRIPTDIR"
-exit;
+SCRIPTDIR=$(dirname $(readlink -f $0))
 
 USAGE="$(cat <<EOT
 $SCRIPTNAME [options] <bamfile> <regions_bed> <sample_name>
@@ -79,28 +73,15 @@ while getopts ":m:o:b:hv" OPT; do
 done
 shift $((OPTIND - 1 ))
 
-# Hi! My name is:
-echo -e "\n::: Amplicon Coverage Analysis Pipeline :::\n"
-
-# Check that we have all the args we need
-#if (( $# != 3 )); then
-if (( $# < 2 )); then
-    echo "ERROR: Not enough arguments passed to script"
-    echo "$USAGE"
-    exit 1
-else
-    bamfile=$1
-    if ! [[ -e "$bamfile" ]]; then
-        echo "ERROR: The BAM file '$bamfile' does not exist"
-        exit 1
-    fi
-    regions_bed=$2
-    if ! [[ -e "$regions_bed" ]]; then
-        echo "ERROR: The regions BED file '$regions_bed' does not exist"
-        exit 1
-    fi
-    sample_name=$3
-fi
+filecheck() {
+    for file in $@; do 
+        if ! [[ -e $file ]]; then 
+            echo "ERROR: the file '$file' does not exist!"
+            echo
+            exit 1
+        fi
+    done
+}
 
 run() {
     local exit_code=0
@@ -188,6 +169,33 @@ now() { now=$(date +"%m-%d-%Y %T"); echo -n "[$now]:";}
 exec > >(tee $logfile)
 exec 2>&1
 
+# Hi! My name is:
+echo -e "\n::: Amplicon Coverage Analysis Pipeline :::\n"
+
+# Check that we have all the args we need
+if [[ $bambed ]]; then
+    if (( $# < 2 )); then
+        echo "ERROR: Not enough arguments passed to script"
+        echo "$USAGE"
+        exit 1
+    else
+        regions_bed=$1
+        sample_name=$2
+        filecheck $bambed $regions_bed
+    fi
+else
+    if (( $# < 3 )); then
+        echo "ERROR: Not enough arguments passed to script"
+        echo "$USAGE"
+        exit 1
+    else
+        bamfile=$1
+        regions_bed=$2
+        sample_name=$3
+        filecheck $bamfile $regions_bed
+    fi
+fi
+
 # We're rolling...
 echo "$(now) Starting pipeline $bamfile..."
 echo "$(now) Params as passed to the pipeline..."
@@ -227,7 +235,6 @@ echo -e "\n$(now) $bamfile has $bamsize reads"
 # Generate amp coverage tables
 echo -e "\n$(now) Generating amplicon coverage tables..."
 run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$bambed"
-#run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed $bamfile"
 echo "$(now) Amplicon coverage tables successfully generated"
 
 # Generate scatter plot
