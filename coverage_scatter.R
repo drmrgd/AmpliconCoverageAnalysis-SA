@@ -2,8 +2,8 @@
 #
 # 3/3/2014 - D Sims
 ######################################################################################################################
-Sys.time()
 getwd()
+#suppressPackageStartupMessages()
 
 # Get some commandline args
 args <- commandArgs( trailingOnly = TRUE )
