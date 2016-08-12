@@ -16,7 +16,7 @@ use List::Util qw(sum);
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v1.9.7_040716";
+my $version = "v1.9.8_041516";
 my $description = <<"EOT";
 From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
 generate strand coverage information for an amplicon panel.
@@ -118,31 +118,27 @@ my ($total_bases, $total_nz_bases, $base_reads, $mean_base_coverage, $uniformity
 my $summary_file = "$outdir/stat_table.txt";
 open( my $summary_fh, ">", "$outdir/stat_table.txt") || die "Can't open the 'stat_table.txt' file for writing: $!";
 
-{
-    # Get quartile coverage data and create output file
-    select $summary_fh;
-    my ( $quart1, $quart2, $quart3 ) = quartile_coverage( \@all_coverage );
-    print "Sample name: $sample_name\n" if $sample_name;
-    print "Total number of mapped reads: $num_reads\n" if $num_reads;
-    print "Total number of amplicons: ", scalar( keys %coverage_stats), "\n";
-    print "Number of amplicons below the threshold: $low_total\n";
-    printf "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
-    print "25%% Quartile Coverage: $quart1\n";
-    print "50%% Quartile Coverage: $quart2\n";
-    print "75%% Quartile Coverage: $quart3\n";
-    
-    print "total bases:          $total_bases\n";
-    print "total non-zero bases: $total_nz_bases\n";
-    print "total base reads:     $total_base_reads\n";
-    print "mean base reads:      $mean_base_coverage\n";
-    print "uniformity:           $uniformity\n";
-    close $summary_fh;
-}
+# Get quartile coverage data and create output file
+select $summary_fh;
+my ( $quart1, $quart2, $quart3 ) = quartile_coverage( \@all_coverage );
+print "Sample name: $sample_name\n" if $sample_name;
+print "Total number of mapped reads: $num_reads\n" if $num_reads;
+print "Total number of amplicons: ", scalar( keys %coverage_stats), "\n";
+print "Number of amplicons below the threshold: $low_total\n";
+printf "Percent of amplicons below the threshold: %.2f%%\n", ($low_total/scalar(keys %coverage_stats)) * 100;
+print "25% Quartile Coverage: $quart1\n";
+print "50% Quartile Coverage: $quart2\n";
+print "75% Quartile Coverage: $quart3\n";
 
+print "total bases:          $total_bases\n";
+print "total non-zero bases: $total_nz_bases\n";
+print "total base reads:     $total_base_reads\n";
+print "mean base reads:      $mean_base_coverage\n";
+print "uniformity:           $uniformity\n";
+close $summary_fh;
 
 sub get_metrics {
     my ($coverage_data,$total_base_reads) = @_;
-
     my ($total_nz_bases,$bases_over_mean);
     my $total_bases = keys %$coverage_data;
     my $mean_base_coverage = sprintf("%0.2f", $total_base_reads/$total_bases);
@@ -150,14 +146,7 @@ sub get_metrics {
         $total_nz_bases++ if $$coverage_data{$pos} != 0;
         $bases_over_mean++ if $$coverage_data{$pos} >= ($mean_base_coverage*0.2);
     }
-
     my $uniformity = sprintf("%0.2f", ($bases_over_mean/$total_bases)*100.00);
-
-    #print "total bases:          $total_bases\n";
-    #print "total non-zero bases: $total_nz_bases\n";
-    #print "total base reads:     $total_base_reads\n";
-    #print "mean base reads:      $mean_base_coverage\n";
-    #print "uniformity:           $uniformity\n";
     return ($total_bases, $total_nz_bases, $total_base_reads, $mean_base_coverage, $uniformity);
 }
 
