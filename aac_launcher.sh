@@ -2,14 +2,13 @@
 # Launcher script for AmpliconCoverageAnalysis-SA script
 #
 # TODO:
-#    - cli args is not working quite rigth.  If I use opts then the rest of the arg mapping is all messed up.  Need
-#      to fix the way the cli args are being processed.
-#    - Add check to see if the BAM file is indexed adn if not, then index it.
+#    - Remove the functionality for starting with a BAM BED file.  We save compute time with it, but the data is a
+#      little less accurate and difficult to deal with.  Better just stick with it!
 #    - Add soem better error checking.
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="1.4.0_041416"
+VERSION="1.5.0_041516"
 SCRIPTNAME=$(basename $0)
 SCRIPTDIR=$(dirname $(readlink -f $0))
 
@@ -20,7 +19,6 @@ Program to run the amplicon coverage analysis pipeline scripts on a BAM file fro
 input is a BAM file, a regions BED file, and a sample name for formtting the output. Note that it is important to have
 a properly formatted BED file, or else the pipeline will not run as the necessary data will not be extracted.
 
-    -b    BAM BED file to use rather than making a new one
     -m    Minimum coverage threshold (DEFAULT: 450)
     -o    Output directory for all of the output data (DEFAULT: PWD)
     -v    Version information
@@ -31,14 +29,10 @@ EOT
 
 mincoverage=450  
 outdir=$(pwd)
-bambed=''
 
 # Set up CLI opts
-while getopts ":m:o:b:hv" OPT; do
+while getopts ":m:o:hv" OPT; do
     case "$OPT" in 
-        b)
-            bambed="$OPTARG"
-            ;;
         m)
             if ! [[ $OPTARG =~ ^[0-9]+$ ]]; then
                 echo "ERROR: '$OPTARG' not valid for opt '-m'. Minimum coverage must be a number"
@@ -94,7 +88,7 @@ run() {
         echo -e "\n$MSG"
         exit 1
     else
-        echo "$MSG"
+        echo -n "$MSG"
     fi
 }
 
@@ -173,32 +167,20 @@ exec 2>&1
 echo -e "\n::: Amplicon Coverage Analysis Pipeline :::\n"
 
 # Check that we have all the args we need
-if [[ $bambed ]]; then
-    if (( $# < 2 )); then
-        echo "ERROR: Not enough arguments passed to script"
-        echo "$USAGE"
-        exit 1
-    else
-        regions_bed=$1
-        sample_name=$2
-        filecheck $bambed $regions_bed
-    fi
+if (( $# < 3 )); then
+    echo "ERROR: Not enough arguments passed to script"
+    echo "$USAGE"
+    exit 1
 else
-    if (( $# < 3 )); then
-        echo "ERROR: Not enough arguments passed to script"
-        echo "$USAGE"
-        exit 1
-    else
-        bamfile=$1
-        regions_bed=$2
-        sample_name=$3
-        filecheck $bamfile $regions_bed
-    fi
+    bamfile=$1
+    regions_bed=$2
+    sample_name=$3
+    filecheck $bamfile $regions_bed
 fi
 
 # We're rolling...
 echo "$(now) Starting pipeline $bamfile..."
-echo "$(now) Params as passed to the pipeline..."
+echo "$(now) Params as passed to the pipeline:"
 echo -e "\tMinimum coverage  => $mincoverage"
 echo -e "\tBAM BED File      => $bambed"
 echo -e "\tOutput Directory  => $outdir"
@@ -214,41 +196,40 @@ fi
 check_dir "$outdir"
 
 # Set up and generate the necessary BAM BED file
-if ! [[ $bambed ]]; then
-    bambed="${bamfile}.bed"
-    echo "$(now) Generating a BED file from '$bamfile'..."
-    run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
-    echo "$(now) BED file '$bambed' generated successfully"
-else
-    echo "$(now) Using existing BED file '$bambed'..."
-    if ! [[ -e $bambed ]]; then
-        echo "ERROR: The BAM BED file '$bambed' does not exist"
-        exit 1
-    fi
-fi
+bambed="${bamfile}.bed"
+echo -n "$(now) Generating a BED file from '$bamfile'..."
+run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
+echo "Done!"
+echo "$(now) BED file '$bambed' generated successfully"
 
 # Get the BAM size
-echo  -e "\n$(now) Getting BAM file size..."
+echo "$(now) Getting BAM file size..."
+if ! [[ -e ${bamfile}.bai ]]; then 
+    echo -n "$(now)     BAM file '$bamfile' is not indexed!  Indexing the file now..."
+    run "samtools index $bamfile"
+    echo "Done!"
+fi
 bamsize=$(run "samtools idxstats $bamfile | awk '{reads += \$3} END {print reads}'")
-echo -e "\n$(now) $bamfile has $bamsize reads"
+echo -e "$(now)     $bamfile has $bamsize reads"
 
 # Generate amp coverage tables
-echo -e "\n$(now) Generating amplicon coverage tables..."
+echo -n "$(now) Generating amplicon coverage tables..."
 run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$bambed"
+echo "Done!"
 echo "$(now) Amplicon coverage tables successfully generated"
 
 # Generate scatter plot
-echo -e "\n$(now) Generating an amplicon coverage scatterplot..."
+echo -n "$(now) Generating an amplicon coverage scatterplot..."
 run "Rscript ${SCRIPTDIR}/coverage_scatter.R $sample_name $mincoverage $outdir"
 echo "$(now) Scatter plots generated successfully"
 
 # Generate strand bias tables
-echo -e "\n$(now) Generating amplicon bias plots..."
+echo "$(now) Generating amplicon bias plots..."
 run "Rscript ${SCRIPTDIR}/strand_coverage.R $outdir/AllAmpliconsCoverage.tsv $outdir"
 echo "$(now) Bias plots successfully generated"
 
 # Clean up
-echo -e "\n$(now) Cleaning up intermediate files..."
+echo -n "$(now) Cleaning up intermediate files..."
 cleanup
-echo -e "\n$(now) Done!"
+echo "$(now) Done!"
 mv $logfile $outdir
