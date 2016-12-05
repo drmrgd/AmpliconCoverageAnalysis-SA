@@ -16,7 +16,7 @@ use List::Util qw(sum);
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v1.9.9_091516";
+my $version = "v2.0.0_091516";
 my $description = <<"EOT";
 From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
 generate strand coverage information for an amplicon panel.
