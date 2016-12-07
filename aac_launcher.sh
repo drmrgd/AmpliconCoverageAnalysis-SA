@@ -2,13 +2,11 @@
 # Launcher script for AmpliconCoverageAnalysis-SA script
 #
 # TODO:
-#    - Remove the functionality for starting with a BAM BED file.  We save compute time with it, but the data is a
-#      little less accurate and difficult to deal with.  Better just stick with it!
-#    - Add soem better error checking.
+#    - Add some better error checking.
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="1.5.0_041516"
+VERSION="1.5.4_120716"
 SCRIPTNAME=$(basename $0)
 SCRIPTDIR=$(dirname $(readlink -f $0))
 
@@ -84,7 +82,7 @@ run() {
     exit_code=$?
 
     if [[ $exit_code != 0 ]]; then
-        echo -e "ERROR: Nonzero exit '$exit_code' while running:\n \$ \`$*\`" >&2
+        echo -e "\nERROR: Nonzero exit '$exit_code' while running:\n \$ \`$*\`" >&2
         echo -e "\n$MSG"
         exit 1
     else
@@ -107,7 +105,7 @@ check_env() {
 cleanup() {
     declare -a temp_files=("Rplots.pdf" $outdir/*clean.bed "$outdir/$bambed")
     for file in "${temp_files[@]}"; do
-        echo $(now) "Removing '$file'..."
+        echo -e "\tRemoving '$file'..."
         rm -rf "$file"
     done
 }
@@ -190,7 +188,7 @@ echo -e "\tSample name       => $sample_name"
 
 # Check the output directory
 if ! [[ -d "$outdir" ]]; then
-    echo -e "$(now) Directory '$outdir' does not exist.  Creating new directory\n"
+    echo "$(now) Directory '$outdir' does not exist.  Creating new directory."
     mkdir -p "$outdir"
 fi
 check_dir "$outdir"
@@ -214,22 +212,25 @@ echo -e "$(now)     $bamfile has $bamsize reads"
 
 # Generate amp coverage tables
 echo -n "$(now) Generating amplicon coverage tables..."
-run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$bambed"
+run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$bambed 2>&1 > /dev/null"
 echo "Done!"
 echo "$(now) Amplicon coverage tables successfully generated"
 
 # Generate scatter plot
 echo -n "$(now) Generating an amplicon coverage scatterplot..."
-run "Rscript ${SCRIPTDIR}/coverage_scatter.R $sample_name $mincoverage $outdir"
+run "Rscript ${SCRIPTDIR}/coverage_scatter.R $sample_name $mincoverage $outdir 2>&1 > /dev/null"
+echo "Done!"
 echo "$(now) Scatter plots generated successfully"
 
 # Generate strand bias tables
 echo "$(now) Generating amplicon bias plots..."
-run "Rscript ${SCRIPTDIR}/strand_coverage.R $outdir/AllAmpliconsCoverage.tsv $outdir"
+run "Rscript ${SCRIPTDIR}/strand_coverage.R $outdir/AllAmpliconsCoverage.tsv $outdir 2>&1 > /dev/null"
+echo "Done!"
 echo "$(now) Bias plots successfully generated"
 
 # Clean up
-echo -n "$(now) Cleaning up intermediate files..."
+echo "$(now) Cleaning up intermediate files..."
 cleanup
 echo "$(now) Done!"
 mv $logfile $outdir
+echo "Pipeline complete.  Data ready to view in directory: $outdir"
