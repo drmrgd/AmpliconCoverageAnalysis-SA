@@ -2,8 +2,8 @@
 #
 # 3/3/2014 - D Sims
 ######################################################################################################################
+suppressPackageStartupMessages(library(ggplot2))
 getwd()
-#suppressPackageStartupMessages()
 
 # Get some commandline args
 args <- commandArgs( trailingOnly = TRUE )
@@ -11,9 +11,6 @@ if( length( args ) != 3 ) stop( "Script requires 3 arguments: sample_name, minim
 sample    <- args[1]
 threshold <- args[2]
 outdir    <- args[3]
-
-# Make sure we have ggplot2 installed
-if(!require(ggplot2)) stop( "Need to install ggplot2" )
 
 coverage_data <- data.frame(read.table(file=paste0(outdir,"/AllAmpliconsCoverage.tsv"), sep="\t", header = TRUE))
 
@@ -33,5 +30,5 @@ scatter <- ggplot(coverage_data, aes(x = Length, y = Median)) +
            ylab( "Median Coverage for Amplicon" ) +
            ggtitle( paste0( "Coverage Versus Amplicon Length Plot for\n", sample ) )
 
-ggsave( filename = paste0( outdir, "/Amp_Coverage_vs_Length_Plot.png" ), plot = scatter )
-ggsave( filename = paste0( outdir, "/Amp_Coverage_vs_Length_Plot.pdf" ), plot = scatter )
+suppressMessages(ggsave( filename = paste0( outdir, "/Amp_Coverage_vs_Length_Plot.png" ), plot = scatter, height=7, width=7 ))
+suppressMessages(ggsave( filename = paste0( outdir, "/Amp_Coverage_vs_Length_Plot.pdf" ), plot = scatter, height=7, width=7 ))
