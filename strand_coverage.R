@@ -1,8 +1,10 @@
 # Plot strand coverage
 # 3/13/2014 - D Sims
 #######################################################################################################################
-library("ggplot2")
-library("reshape2")
+#suppressMessages(library(ggplot2))
+#suppressMessages(library(reshape2))
+library(ggplot2, quietly=TRUE)
+library(reshape2, quietly=TRUE)
 
 Sys.time()
 getwd()
