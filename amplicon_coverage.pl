@@ -12,11 +12,11 @@ use autodie;
 use Getopt::Long qw( :config bundling auto_abbrev no_ignore_case );
 use Data::Dump;
 use File::Basename;
-use List::Util qw(sum);
+use List::Util qw(min max sum);
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v2.0.0_091516";
+my $version = "v2.1.1_120516";
 my $description = <<"EOT";
 From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
 generate strand coverage information for an amplicon panel.
@@ -98,6 +98,9 @@ if ($bambed) {
     $bambed = gen_bam_bed($bamfile);
 }
 
+# TODO:
+#    - Old and unwise coding methods here.  Shoudl be using hash refs, and instead passing in hashes and writing to them.
+#      Hard to figure out what I'm looking at.  Need to fix and re-write so that I'm outputting data better.
 my (%coverage_data, %base_coverage_data);
 get_coverage_data($bambed,$regionsbed,\%coverage_data);
 get_base_coverage_data( $bambed, $regionsbed, \%base_coverage_data);
@@ -122,20 +125,25 @@ open( my $summary_fh, ">", "$outdir/stat_table.txt") || die "Can't open the 'sta
 select $summary_fh;
 my ( $quart1, $quart2, $quart3 ) = quartile_coverage( \@all_coverage );
 my $pct_below_threshold = sprintf("%.2f%%", ($low_total/scalar(keys %coverage_stats)) * 100);
+my $min_cov = min(@all_coverage);
+my $max_cov = max(@all_coverage);
+
 print ":::  Amplicon Coverage Statistics  :::\n";
 print "Sample name:                $sample_name\n" if $sample_name;
 print "Mean read threshold:        $threshold\n";
 print "Total mapped reads:         $num_reads\n" if $num_reads;
 print "Total number of amplicons:  ", scalar( keys %coverage_stats), "\n";
+print "Min Amplicon Coverage:      $min_cov\n";
+print "Max Amplicon Coverage:      $max_cov\n";
 print "Amplicons < $threshold mean reads: $low_total ($pct_below_threshold)\n";
 print "25% Quartile Coverage:      $quart1\n";
 print "50% Quartile Coverage:      $quart2\n";
 print "75% Quartile Coverage:      $quart3\n";
-print "total bases:                $total_bases\n";
-print "total non-zero bases:       $total_nz_bases\n";
-print "total base reads:           $total_base_reads\n";
-print "mean base reads:            $mean_base_coverage\n";
-print "uniformity:                 $uniformity\n";
+print "Total Bases:                $total_bases\n";
+print "Total Non-zero Bases:       $total_nz_bases\n";
+print "Total Base Reads:           $total_base_reads\n";
+print "Mean Base Reads:            $mean_base_coverage\n";
+print "Uniformity:                 $uniformity\n";
 close $summary_fh;
 
 sub get_metrics {
@@ -181,6 +189,7 @@ sub gen_amplicon_coverage_tables {
 }
 
 sub get_coverage_stats {
+    #XXX
     my ($coverage_stats,$amp_coverage) = @_;
     for my $amplicon( sort keys %coverage_data ) {
 
@@ -199,6 +208,8 @@ sub get_coverage_stats {
             push( @amp_coverage, $sum_fr );
         }
         my $median = median( \@amp_coverage );
+        #my $min = min(@amp_coverage);
+        #my $max = max(@amp_coverage);
 
         my $total_reads = $forward_median + $reverse_median;
 
@@ -210,12 +221,14 @@ sub get_coverage_stats {
             $forward_prop = $reverse_prop = 0;
         }
 
-        push( @{$coverage_stats{ join( ":", $amplicon, $length )}}, $forward_median, $reverse_median, $forward_prop, $reverse_prop, $median ); 
+        #push( @{$coverage_stats{ join( ":", $amplicon, $length )}}, $forward_median, $reverse_median, $forward_prop, $reverse_prop, $median, $min, $max ); 
+        push( @{$coverage_stats{ join( ":", $amplicon, $length )}}, $forward_median, $reverse_median, $forward_prop, $reverse_prop, $median );
     }
     return;
 }
 
 sub get_base_coverage_data {
+    # Get coverage for every base within an amplicon regardless of strand.  Used for uniformity and base cov metrics
     my ($bambed, $regions_bed, $base_data) = @_;
     my $total_base_reads = 0;
     my $cmd = qq{ coveragebed -d -b $bambed -a $regionsbed };
@@ -229,6 +242,7 @@ sub get_base_coverage_data {
 }
 
 sub get_coverage_data {
+    # Get coverage for every base in an amplicon, binned by strand.  
     my ($bambed,$regionsbed,$coverage_data) = @_;
 
     # Use BEDtools to get amplicon coverage data for each amplicon
@@ -302,10 +316,8 @@ sub proc_bed {
             $pool = $fields[4];
             $gene = $fields[5];
         }
-
         $pool =~ s/=//;
-
-        print $out_fh join( "\t", @fields[0..3], $pool, $gene ), "\n";
+        print {$out_fh} join( "\t", @fields[0..3], $pool, $gene ), "\n";
     }
     close $fh;
     close $out_fh;
