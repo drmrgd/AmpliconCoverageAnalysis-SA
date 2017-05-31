@@ -6,7 +6,7 @@
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="1.5.4_120716"
+VERSION="1.5.5_053117"
 SCRIPTNAME=$(basename $0)
 SCRIPTDIR=$(dirname $(readlink -f $0))
 
@@ -196,7 +196,7 @@ check_dir "$outdir"
 # Set up and generate the necessary BAM BED file
 bambed="${bamfile}.bed"
 echo -n "$(now) Generating a BED file from '$bamfile'..."
-run "bamToBed -i $bamfile > \"${outdir}/$bambed\""
+run "bamToBed -i $bamfile > ${outdir}/$(basename $bambed)"
 echo "Done!"
 echo "$(now) BED file '$bambed' generated successfully"
 
@@ -212,7 +212,7 @@ echo -e "$(now)     $bamfile has $bamsize reads"
 
 # Generate amp coverage tables
 echo -n "$(now) Generating amplicon coverage tables..."
-run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$bambed 2>&1 > /dev/null"
+run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$(basename $bambed) 2>&1 > /dev/null"
 echo "Done!"
 echo "$(now) Amplicon coverage tables successfully generated"
 
