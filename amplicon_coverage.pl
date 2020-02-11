@@ -1,10 +1,12 @@
 #!/usr/bin/perl
-# Input a regions BED file and a BED file generated from the sequence BAM file processed through bamToBed,
-# and output tables indicating the median coverage for each amplicon, each strand covered by the amplicon,
-# the identities of amplicons that did not meet the minumum threshold, and a summary table for the sample.
+# Input a regions BED file and a BED file generated from the sequence BAM file
+# processed through bamToBed, and output tables indicating the median coverage
+# for each amplicon, each strand covered by the amplicon, the identities of 
+# amplicons that did not meet the minumum threshold, and a summary table for 
+# the sample.
 #
 # 3/4/2014 - D Sims
-#############################################################################################################
+################################################################################
 use warnings;
 use strict;
 use autodie;
@@ -16,10 +18,11 @@ use List::Util qw(min max sum);
 use Cwd;
 
 my $scriptname = basename($0);
-my $version = "v2.1.1_120516";
+my $version = "v3.0.021120";
 my $description = <<"EOT";
-From an Regions BED file, and a BED file generated from the sequence BAM file processed through bamToBed,
-generate strand coverage information for an amplicon panel.
+From an Regions BED file, and a BED file generated from the sequence BAM file 
+processed through bamToBed, generate strand coverage information for an amplicon
+panel.
 EOT
 
 my $usage = <<"EOT";
@@ -46,8 +49,7 @@ my $bambed;
 GetOptions( "bambed|b=s"    => \$bambed,
             "outdir|o=s"    => \$outdir,
             "sample|s=s"    => \$sample_name,
-            "ion|i"         => \$ion,
-            "reads|r=i"     => \$num_reads,
+            "ion|i"         => \$ion, "reads|r=i"     => \$num_reads,
             "threshold|t=i" => \$threshold,
             "version|v"     => \$ver_info,
             "help|h"        => \$help )
@@ -84,9 +86,10 @@ if ( ! -d $outdir ) {
     mkdir($outdir) || die "ERROR: Can not create $outdir: $!\n";
 }
 
-#########------------------------------ END ARG Parsing ---------------------------------#########
+#########--------------------- END ARG Parsing ------------------------#########
 
-# If we're using an Ion Torrent processed BED file from their API, we need to process it a bit to get the Gene ID
+# If we're using an Ion Torrent processed BED file from their API, we need to 
+# process it a bit to get the Gene ID
 if ( $ion ) {
     print "Converting Ion BED file to standard...\n";
     $regionsbed = proc_bed( \$regionsbed );
@@ -98,14 +101,14 @@ if ($bambed) {
     $bambed = gen_bam_bed($bamfile);
 }
 
-# TODO:
-#    - Old and unwise coding methods here.  Shoudl be using hash refs, and instead passing in hashes and writing to them.
-#      Hard to figure out what I'm looking at.  Need to fix and re-write so that I'm outputting data better.
 my (%coverage_data, %base_coverage_data);
-get_coverage_data($bambed,$regionsbed,\%coverage_data);
-get_base_coverage_data( $bambed, $regionsbed, \%base_coverage_data);
+run_cov_bed($bambed, $regionsbed, \%coverage_data, 'for');
+run_cov_bed($bambed, $regionsbed, \%coverage_data, 'rev');
 
-# have to count here or I get 2x counts for overlapping bases...then again, is that a bad thing?
+get_base_coverage_data($bambed, $regionsbed, \%base_coverage_data);
+
+# have to count here or I get 2x counts for overlapping bases...then again, is
+# that a bad thing?
 my $total_base_reads;
 $total_base_reads += $base_coverage_data{$_} for keys %base_coverage_data;
 
@@ -116,15 +119,17 @@ get_coverage_stats(\%coverage_stats, \@all_coverage);
 # Generate the amplicon coverage tables
 my $low_total = gen_amplicon_coverage_tables($outdir);
 
-my ($total_bases, $total_nz_bases, $base_reads, $mean_base_coverage, $uniformity) = get_metrics(\%base_coverage_data, $total_base_reads);
+my ($total_bases, $total_nz_bases, $base_reads, $mean_base_coverage, 
+    $uniformity) = get_metrics(\%base_coverage_data, $total_base_reads);
 # Create some output filehandles for the data
 my $summary_file = "$outdir/stat_table.txt";
-open( my $summary_fh, ">", "$outdir/stat_table.txt") || die "Can't open the 'stat_table.txt' file for writing: $!";
+open( my $summary_fh, ">", "$outdir/stat_table.txt");
 
 # Get quartile coverage data and create output file
 select $summary_fh;
 my ( $quart1, $quart2, $quart3 ) = quartile_coverage( \@all_coverage );
-my $pct_below_threshold = sprintf("%.2f%%", ($low_total/scalar(keys %coverage_stats)) * 100);
+my $pct_below_threshold = sprintf("%.2f%%", 
+    ($low_total/scalar(keys %coverage_stats)) * 100);
 my $min_cov = min(@all_coverage);
 my $max_cov = max(@all_coverage);
 
@@ -156,29 +161,33 @@ sub get_metrics {
         $bases_over_mean++ if $$coverage_data{$pos} >= ($mean_base_coverage*0.2);
     }
     my $uniformity = sprintf("%0.2f", ($bases_over_mean/$total_bases)*100.00);
-    return ($total_bases, $total_nz_bases, $total_base_reads, $mean_base_coverage, $uniformity);
+    return ($total_bases, $total_nz_bases, $total_base_reads, 
+        $mean_base_coverage, $uniformity);
 }
 
 sub gen_amplicon_coverage_tables {
     my $outdir = shift;
     my $lowcoverage_file = "$outdir/LowCoverageAmplicons.tsv";
     my $allcoverage_file = "$outdir/AllAmpliconsCoverage.tsv";
-    open( my $aa_fh, ">", $allcoverage_file ) || die "Can't open the 'All Amplicons Coverage file for writing: $!";
-    open( my $low_fh, ">", $lowcoverage_file ) || die "Can't open the Low Amplicons Coverage file for writing: $!";
+    open( my $aa_fh, ">", $allcoverage_file );
+    open( my $low_fh, ">", $lowcoverage_file );
 
     # Make tables of All Amplicon and Low Amplicon Coverage
-    my $header = "Amplicon\tGene\tForward\tReverse\tFoward Proportion\tReverse Proportion\tMedian\tLength\n";
-    print $aa_fh $header;
-    print $low_fh $header;
+    my @header = qw(Amplicon Gene Forward Reverse Forward_Proportion 
+        Reverse_Proportion Median Length);
+
+    print {$aa_fh} join("\t", @header), "\n";
+    print {$low_fh} join("\t", @header), "\n";
 
     my $low_total = 0;
     for my $amplicon( keys %coverage_stats) {
         my ( $ampid, $gene, $length ) = split( /:/, $amplicon );
-        my $outstring = join( "\t", $ampid, $gene, @{$coverage_stats{$amplicon}}, $length );
-        print $aa_fh "$outstring\n";
+        my $outstring = join( "\t", $ampid, $gene, 
+            @{$coverage_stats{$amplicon}}, $length );
+        print {$aa_fh} "$outstring\n";
 
         if ( $coverage_stats{$amplicon}[4] < $threshold ) {
-            print $low_fh "$outstring\n";
+            print {$low_fh} "$outstring\n";
             $low_total++;
         }
     }
@@ -189,7 +198,6 @@ sub gen_amplicon_coverage_tables {
 }
 
 sub get_coverage_stats {
-    #XXX
     my ($coverage_stats,$amp_coverage) = @_;
     for my $amplicon( sort keys %coverage_data ) {
 
@@ -208,9 +216,6 @@ sub get_coverage_stats {
             push( @amp_coverage, $sum_fr );
         }
         my $median = median( \@amp_coverage );
-        #my $min = min(@amp_coverage);
-        #my $max = max(@amp_coverage);
-
         my $total_reads = $forward_median + $reverse_median;
 
         my ( $forward_prop, $reverse_prop );
@@ -221,49 +226,51 @@ sub get_coverage_stats {
             $forward_prop = $reverse_prop = 0;
         }
 
-        #push( @{$coverage_stats{ join( ":", $amplicon, $length )}}, $forward_median, $reverse_median, $forward_prop, $reverse_prop, $median, $min, $max ); 
-        push( @{$coverage_stats{ join( ":", $amplicon, $length )}}, $forward_median, $reverse_median, $forward_prop, $reverse_prop, $median );
+        push( @{$coverage_stats{ join( ":", $amplicon, $length ) }}, 
+            $forward_median, 
+            $reverse_median, 
+            $forward_prop, 
+            $reverse_prop, 
+            $median 
+        );
     }
     return;
 }
 
 sub get_base_coverage_data {
-    # Get coverage for every base within an amplicon regardless of strand.  Used for uniformity and base cov metrics
+    # Get coverage for every base within an amplicon regardless of strand. Used 
+    # for uniformity and base cov metrics
     my ($bambed, $regions_bed, $base_data) = @_;
     my $total_base_reads = 0;
-    my $cmd = qq{ coveragebed -d -b $bambed -a $regionsbed };
+    my $cmd = qq{ coverageBed -d -b $bambed -a $regionsbed };
     open(my $stream, "-|", $cmd);
     while (<$stream>) {
         my @fields = split;
-        my $pos = "$fields[0]:" . ($fields[1] + ($fields[6]-1));
-        $$base_data{$pos} = $fields[7];
+        my $pos = "$fields[0]:" . ($fields[1] + ($fields[-2]-1));
+        $$base_data{$pos} = $fields[-1];
     }
     return;
 }
 
-sub get_coverage_data {
-    # Get coverage for every base in an amplicon, binned by strand.  
-    my ($bambed,$regionsbed,$coverage_data) = @_;
+sub run_cov_bed {
+    my ($bambed, $regbed, $cov_data, $direction) = @_;
+    my $grep_term;
 
-    # Use BEDtools to get amplicon coverage data for each amplicon
-    my $get_forward_reads = qq{ grep "\\+\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
-    open( my $fcov, "-|", "$get_forward_reads" ) || die "Can't open the stream: $!";
-    while (<$fcov>) {
-        chomp;
-        my @data = split;
-        push( @{$coverage_data{join( ":", @data[3,5] )}->{'for'}}, $data[7] );
+    ($direction eq 'for') ? ($grep_term = '"\\+$"') : ($grep_term = '"\\-$"');
+    my $cmd = qq{grep $grep_term $bambed | coverageBed -d -b stdin -a $regbed};
+    open(my $stream, "-|", $cmd);
+    while (<$stream>) {
+        chomp(my @data = split);
+        my $hkey = sprintf("%s:%s", $data[3], (@data > 7) ? $data[5] : $data[4]);
+        if (@data > 7) {
+            # Have Ion data.
+            $hkey = "$data[3]:$data[5]";
+        } else {
+            # Likely Illumina data.
+            $hkey = "$data[3]:$data[4]";
+        }
+        push(@{$$cov_data{$hkey}->{$direction}}, $data[-1]);
     }
-    close $fcov;
-
-    my $get_reverse_reads = qq{ grep "\\-\$" $bambed | coveragebed -d -b stdin -a $regionsbed };
-    open( my $rcov, "-|", "$get_reverse_reads" ) || die "Can't open the stream: $!";
-    while (<$rcov>) {
-        chomp;
-        my @data = split;
-        push( @{$coverage_data{join( ":", @data[3,5] )}->{'rev'}}, $data[7] );
-    }
-    close $rcov;
-    return;
 }
 
 sub median {
@@ -299,8 +306,8 @@ sub proc_bed {
     (my $new_name = basename($$input_bed)) =~ s/(.*?)\.bed/$1_clean.bed/;
     my $output_bed = "$outdir/$new_name";
 
-    open( my $fh, "<", $$input_bed ) || die "Can't open the BED file for processing: $!";
-    open( my $out_fh, ">", $output_bed ) || die "Can't create the new BED file: $!";
+    open( my $fh, "<", $$input_bed );
+    open( my $out_fh, ">", $output_bed );
 
     while (<$fh>) {
         if ( /track/ ) {

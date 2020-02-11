@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Launcher script for AmpliconCoverageAnalysis-SA script
 #
 # TODO:
@@ -6,18 +6,22 @@
 # 
 # 8/8/2014 - D Sims
 ####################################################################################################################
-VERSION="1.5.5_053117"
+VERSION="2.0.021120"
 SCRIPTNAME=$(basename $0)
 SCRIPTDIR=$(dirname $(readlink -f $0))
 
 USAGE="$(cat <<EOT
 $SCRIPTNAME [options] <bamfile> <regions_bed> <sample_name>
 
-Program to run the amplicon coverage analysis pipeline scripts on a BAM file from the Ion Torrent platform. Required
-input is a BAM file, a regions BED file, and a sample name for formtting the output. Note that it is important to have
-a properly formatted BED file, or else the pipeline will not run as the necessary data will not be extracted.
+Program to run the amplicon coverage analysis pipeline scripts on a BAM file 
+from either an Ion Torrent or Illumina platform. Required input is a BAM file,
+a regions BED file, and a sample name for formtting the output. Note that it is
+important to have a properly formatted BED file, or else the pipeline will not
+run as the necessary data will not be extracted. A large part of this is to have
+the gene name in the BED file.
 
     -m    Minimum coverage threshold (DEFAULT: 450)
+    -i    Regions BED is an Ion Torrent BED file. Special processing required.
     -o    Output directory for all of the output data (DEFAULT: PWD)
     -v    Version information
     -h    Print this help text
@@ -27,9 +31,10 @@ EOT
 
 mincoverage=450  
 outdir=$(pwd)
+ion=0
 
 # Set up CLI opts
-while getopts ":m:o:hv" OPT; do
+while getopts ":m:o:ihv" OPT; do
     case "$OPT" in 
         m)
             if ! [[ $OPTARG =~ ^[0-9]+$ ]]; then
@@ -40,7 +45,7 @@ while getopts ":m:o:hv" OPT; do
             fi
             ;;
         o)
-            outdir=$OPTARG
+            outdir=${outdir}/$OPTARG
             ;;
         h)
             echo -e "$SCRIPTNAME - $VERSION\n"
@@ -50,6 +55,9 @@ while getopts ":m:o:hv" OPT; do
         v)
             echo "$SCRIPTNAME - $VERSION"
             exit 0
+            ;;
+        i)
+            ion=1
             ;;
         :)
             echo "Option "-$OPTARG" requires an argument\n"
@@ -63,7 +71,7 @@ while getopts ":m:o:hv" OPT; do
             ;;
     esac
 done
-shift $((OPTIND - 1 ))
+shift $((OPTIND - 1))
 
 filecheck() {
     for file in $@; do 
@@ -74,6 +82,12 @@ filecheck() {
         fi
     done
 }
+
+if [[ $ion == 1 ]]; then 
+    ionbed='True'
+else
+    ionbed='False'
+fi
 
 run() {
     local exit_code=0
@@ -185,6 +199,7 @@ echo -e "\tOutput Directory  => $outdir"
 echo -e "\tRegions BED File  => $regions_bed"
 echo -e "\tBAM File          => $bamfile"
 echo -e "\tSample name       => $sample_name"
+echo -e "\tIon BED file      => $ionbed"
 
 # Check the output directory
 if ! [[ -d "$outdir" ]]; then
@@ -212,7 +227,18 @@ echo -e "$(now)     $bamfile has $bamsize reads"
 
 # Generate amp coverage tables
 echo -n "$(now) Generating amplicon coverage tables..."
-run "${SCRIPTDIR}/amplicon_coverage.pl -i -s $sample_name -t $mincoverage -r $bamsize -o $outdir $regions_bed -b $outdir/$(basename $bambed) 2>&1 > /dev/null"
+cmd="${SCRIPTDIR}/amplicon_coverage.pl "
+if [[ $ionbed == 'True' ]]; then
+    cmd+='-i '
+fi
+cmd+="-s $sample_name "
+cmd+="-t $mincoverage "
+cmd+="-r $bamsize "
+cmd+="-o $outdir "
+cmd+="$regions_bed "
+cmd+="-b $outdir/$(basename $bambed) "
+cmd+="2>&1 > /dev/null"
+run $cmd
 echo "Done!"
 echo "$(now) Amplicon coverage tables successfully generated"
 
